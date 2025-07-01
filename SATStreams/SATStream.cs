@@ -10,6 +10,16 @@ namespace SATStreams
     {
         static int nextId = 1;
         private int id = nextId++;
+
+        public SATStream()
+        {
+        }
+        
+        public SATStream(SATStream stream)
+        {
+            Clause = new Clause(stream.Clause); 
+        }
+
         public int Id => id;
 
         public Clause Clause { get; set; } = new Clause();

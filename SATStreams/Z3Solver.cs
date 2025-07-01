@@ -17,7 +17,7 @@ namespace SATStreams
         {
             context = new Context();
             solver = context.MkSolver();
-            solver.Set("timeout", timeOut);
+            solver.Set("timeout", (uint)timeOut);
 
             var variables = Utils.GetVariables(cnf);
             varsDict = variables.ToDictionary(
