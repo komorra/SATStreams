@@ -24,5 +24,11 @@ namespace SATStreams
 
         public Clause Clause { get; set; } = new Clause();
         public bool IsMarkedForDeletion { get; set; } = false;
+
+        internal void SetID(int id)
+        {
+            this.id = id;
+            nextId = Math.Max(this.id + 1, nextId);
+        }
     }
 }

@@ -45,6 +45,7 @@ namespace SATStreams
         private Clause variables;
         private Random random = new Random(42);
         private Stopwatch watch;
+        private DateTime lastCheckpointTime = DateTime.UtcNow;
 
         public SATSolver(CNF cnf, string problemName = null)
         {
@@ -68,6 +69,18 @@ namespace SATStreams
             var rootStream = new SATStream();
             rootStream.Clause = new Clause(init);
             solvingStreams.Add(rootStream);
+
+            var hash = Utils.GetCNFHash(cnf);
+            if(UseCheckpoints)
+            {
+                var streams = Utils.LoadCheckPoint(hash);
+                if(streams != null && streams.Count > 0)
+                {
+                    solvingStreams = streams;
+                    init = solvingStreams.Select(x => x.Clause).Aggregate((x, y) => x.Intersect(y).ToHashSet());
+                    LogMessage?.Invoke($"Loaded checkpoint with {solvingStreams.Count} streams.");                    
+                }
+            }
 
             for (int i = 0; i < FastSolverThreadCount; i++)
             {
@@ -150,6 +163,13 @@ namespace SATStreams
 
                         LogMessage?.Invoke($"{progressString}{watch.Elapsed}: Branching on {branchVar} with {branch.Clause.Count} vars. Total streams: {solvingStreams.Count}");
                     }
+                }
+
+                if(DateTime.UtcNow - lastCheckpointTime > TimeSpan.FromMinutes(5) && UseCheckpoints)
+                {
+                    Utils.SaveCheckPoint(hash, solvingStreams);
+                    lastCheckpointTime = DateTime.UtcNow;
+                    LogMessage?.Invoke($"Saved checkpoint with {solvingStreams.Count} streams.");
                 }
             }
             watch.Stop();

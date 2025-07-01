@@ -56,6 +56,17 @@ namespace SATStreams
             return cnf;
         }
 
+        public static void ToFile(CNF cnf, string filePath)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("p cnf " + cnf.SelectMany(x => x).Distinct().Count() + " " + cnf.Count);
+            foreach (var cl in cnf)
+            {
+                sb.AppendLine(string.Join(" ", cl) + " 0");
+            }
+            System.IO.File.WriteAllText(filePath, sb.ToString());
+        }
+
         public static void FastBCP(Clause init, Clause added, Dictionary<int, CNF> lut)
         {
             var stack = new Stack<int>(added);
@@ -153,6 +164,83 @@ namespace SATStreams
                 }
             }
             return variables;
+        }
+
+        public static string GetCNFHash(CNF cnf)
+        {
+            var sb = new StringBuilder();
+            foreach (var cl in cnf.OrderBy(x => x.Max(o=>o)))
+            {
+                foreach (var lit in cl.OrderBy(x => x))
+                {
+                    sb.Append(lit).Append(" ");
+                }
+                sb.Append("0\n");
+            }
+            var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+            using (var sha256 = System.Security.Cryptography.SHA256.Create())
+            {
+                var hashBytes = sha256.ComputeHash(bytes);
+                return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+            }
+        }
+
+        public static void SaveCheckPoint(string name, List<SATStream> streams)
+        {
+            name = $"checkpoints/{name}";
+            var init = streams.Select(x => x.Clause).Aggregate((x, y) => x.Intersect(y).ToHashSet());
+            if(!Directory.Exists(name))
+            {
+                Directory.CreateDirectory(name);
+            }
+            foreach (var stream in streams)
+            { 
+                var cnf = stream.Clause.Select(x => new Clause { x }).ToHashSet();
+                var filePath = Path.Combine(name, $"{stream.Id}.cnf");
+                ToFile(cnf, filePath);
+            }
+            var solutionFilePath = Path.Combine(name, "solution.cnf");
+            var solutionCNF = init.Select(x => new Clause { x }).ToHashSet();
+            ToFile(solutionCNF, solutionFilePath);
+
+            File.WriteAllLines(Path.Combine(name, "activeids.txt"),
+                streams.Where(x => !x.IsMarkedForDeletion).Select(x => x.Id.ToString()).ToArray());
+        }
+
+        public static List<SATStream> LoadCheckPoint(string name)
+        {
+            name = $"checkpoints/{name}";
+            var activeIdsFile = Path.Combine(name, "activeids.txt");
+            var activeIds = new HashSet<int>();
+            if (File.Exists(activeIdsFile))
+            {
+                var lines = File.ReadAllLines(activeIdsFile);
+                foreach (var line in lines)
+                {
+                    if (int.TryParse(line, out int id))
+                    {
+                        activeIds.Add(id);
+                    }
+                }
+            }
+            var streams = new List<SATStream>();
+            if (!Directory.Exists(name))
+            {
+                return null;
+            }
+            foreach (var activeId in activeIds)
+            {
+                var cnf = FromFile(Path.Combine(name,activeId+".cnf"));
+                if (cnf.Count == 0)
+                {
+                    continue;
+                }
+                var stream = new SATStream();
+                stream.Clause = cnf.Where(x=>x.Count == 1).SelectMany(x => x).ToHashSet();
+                stream.SetID(activeId);
+                streams.Add(stream);
+            }
+            return streams;
         }
     }
 }
