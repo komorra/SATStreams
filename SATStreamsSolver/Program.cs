@@ -1,5 +1,6 @@
 ﻿using clipr;
 using SATStreams;
+using System.Diagnostics;
 
 namespace SATStreamsSolver
 {
@@ -9,7 +10,7 @@ namespace SATStreamsSolver
         {
             var options = CliParser.Parse<Options>(args);
 
-            var cnf = Utils.FromFile(options.InputFile);
+            var cnf = Utils.FromFile(options.InputFile);            
 
             var solver = new SATSolver(cnf, options.InputFile);
             solver.LogMessage += message => Console.WriteLine(message);

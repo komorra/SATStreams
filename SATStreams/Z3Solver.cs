@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace SATStreams
 {
-    internal class Z3Solver
+    public class Z3Solver
     {
         private Context context;
         private Solver solver;

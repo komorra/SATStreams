@@ -71,19 +71,20 @@ namespace SATStreams
 
             for (int i = 0; i < FastSolverThreadCount; i++)
             {
-                var thread = new Thread(() => SolverThread(random.Next(), FastSolverTimeOut));
+                var seed = random.Next();
+                var thread = new Thread(() => SolverThread(seed, FastSolverTimeOut));
                 thread.IsBackground = true;
                 thread.Start();
             }
             for (int i = 0; i < SlowSolverThreadCount; i++)
             {
-                var thread = new Thread(() => SolverThread(random.Next(), SlowSolverTimeOut));
+                var seed = random.Next();
+                var thread = new Thread(() => SolverThread(seed, SlowSolverTimeOut));
                 thread.IsBackground = true;
                 thread.Start();
             }
 
-            var fastSolver = new Z3Solver(cnf, 10);
-
+            var fastSolver = new Z3Solver(cnf, 10);            
             while (init.Count < variables.Count)
             {
                 foreach(var stream in solvingStreams.ToList())
