@@ -8,7 +8,11 @@ namespace SATStreams
 {
     public class SATStream
     {
-        public Clause Clause { get; } = new Clause();
+        static int nextId = 1;
+        private int id = nextId++;
+        public int Id => id;
+
+        public Clause Clause { get; set; } = new Clause();
         public bool IsMarkedForDeletion { get; set; } = false;
     }
 }

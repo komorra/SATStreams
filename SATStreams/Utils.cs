@@ -141,5 +141,18 @@ namespace SATStreams
 
             return ok;
         }
+
+        public static Clause GetVariables(CNF cnf)
+        {
+            var variables = new Clause();
+            foreach (var cl in cnf)
+            {
+                foreach (var lit in cl)
+                {
+                    variables.Add(Math.Abs(lit));
+                }
+            }
+            return variables;
+        }
     }
 }

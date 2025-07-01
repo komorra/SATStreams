@@ -11,7 +11,7 @@ namespace SATStreamsSolver
 
             var cnf = Utils.FromFile(options.InputFile);
 
-            var solver = new SATSolver(cnf);
+            var solver = new SATSolver(cnf, options.InputFile);
         }
     }
 }
