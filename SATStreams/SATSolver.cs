@@ -22,7 +22,7 @@ namespace SATStreams
         public int SlowSolverTimeOut { get; set; } = 60000; // in milliseconds
         public int FastSolverTimeOut { get; set; } = 10000; // in milliseconds
         public string ProblemName { get; set; } = "SATSolver";
-        public double BranchingChance { get; set; } = 0.002;
+        public double BranchingChance { get; set; } = 0.0002;
 
         public int CombinedVarCount { get; set; } = 6;
 
@@ -104,11 +104,15 @@ namespace SATStreams
 
                 foreach(var stream in solvingStreams.ToList())
                 {
-                    if (stream.IsMarkedForDeletion)
+                    var toDelete = solvingStreams.FirstOrDefault(x => x.IsMarkedForDeletion);
+                    if (toDelete != null)
                     {
-                        DeleteStream(stream);
-                        continue;
-                    }
+                        DeleteStream(toDelete);
+                        if (toDelete == stream)
+                        {
+                            continue;
+                        }
+                    }                   
 
                     if(stream.Clause.Count == variables.Count)
                     {
