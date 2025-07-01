@@ -9,5 +9,6 @@ namespace SATStreams
     public class SATStream
     {
         public Clause Clause { get; } = new Clause();
+        public bool IsMarkedForDeletion { get; set; } = false;
     }
 }

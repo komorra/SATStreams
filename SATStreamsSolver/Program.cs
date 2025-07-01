@@ -1,10 +1,17 @@
-﻿namespace SATStreamsSolver
+﻿using clipr;
+using SATStreams;
+
+namespace SATStreamsSolver
 {
     internal class Program
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello, World!");
+            var options = CliParser.Parse<Options>(args);
+
+            var cnf = Utils.FromFile(options.InputFile);
+
+            var solver = new SATSolver(cnf);
         }
     }
 }
