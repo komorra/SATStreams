@@ -18,6 +18,7 @@ namespace SATStreams
             context = new Context();
             solver = context.MkSolver();
             solver.Set("timeout", (uint)timeOut);
+            solver.Set("phase_selection", 5);
 
             var variables = Utils.GetVariables(cnf);
             varsDict = variables.ToDictionary(

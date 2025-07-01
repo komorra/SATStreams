@@ -87,6 +87,8 @@ namespace SATStreams
             var fastSolver = new Z3Solver(cnf, 10);            
             while (init.Count < variables.Count)
             {
+                Clause lastGoodRV = null;
+
                 foreach(var stream in solvingStreams.ToList())
                 {
                     if (stream.IsMarkedForDeletion)
@@ -106,20 +108,26 @@ namespace SATStreams
                         break;
                     }
 
-                    var rv = variables.Skip(random.Next(variables.Count))
+                    var rv = lastGoodRV ?? variables.Skip(random.Next(variables.Count))
                         .Where(x => !stream.Clause.Contains(x) && !stream.Clause.Contains(-x))
                         .Take(CombinedVarCount)
                         .ToHashSet();
 
+                    lastGoodRV = null;
+
                     var prop = Utils.RangedPropagation(stream.Clause, rv, lut);
                     if(prop == null)
                     {
+                        lastGoodRV = rv;
+                       
                         DeleteStream(stream);
                         continue;
                     }
 
                     if(prop.Count > stream.Clause.Count)
                     {
+                        lastGoodRV = rv;
+
                         Utils.FastBCP(stream.Clause, prop, lut);
                         if (stream.Clause.Any(x => stream.Clause.Contains(-x)) || fastSolver.Solve(stream.Clause, out _) == false)
                         {
