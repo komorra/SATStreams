@@ -203,6 +203,21 @@ namespace SATStreams
             var solutionCNF = init.Select(x => new Clause { x }).ToHashSet();
             ToFile(solutionCNF, solutionFilePath);
 
+            var cnfFiles = Directory.GetFiles(name, "*.cnf");
+            foreach(var file in cnfFiles)
+            {
+                var fileName = Path.GetFileName(file);
+                if (fileName == "solution.cnf" || fileName == "activeids.txt")
+                {
+                    continue;
+                }
+                var id = int.Parse(Path.GetFileNameWithoutExtension(fileName));
+                if (!streams.Any(x => x.Id == id))
+                {
+                    File.Delete(file);
+                }
+            }
+
             File.WriteAllLines(Path.Combine(name, "activeids.txt"),
                 streams.Where(x => !x.IsMarkedForDeletion).Select(x => x.Id.ToString()).ToArray());
         }
