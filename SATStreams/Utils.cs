@@ -18,7 +18,7 @@ namespace SATStreams
             foreach (var cl in cnf)
             {
                 foreach (var lt in cl)
-                {                    
+                {
                     if (!lut.ContainsKey(lt))
                     {
                         lut.Add(lt, new CNF());
@@ -70,7 +70,7 @@ namespace SATStreams
         public static void FastBCP(Clause init, Clause added, Dictionary<int, CNF> lut)
         {
             var stack = new Stack<int>(added);
-            
+
             while (stack.Count > 0)
             {
                 var p = stack.Pop();
@@ -91,7 +91,7 @@ namespace SATStreams
                             {
                                 continue;
                             }
-                            
+
                             stack.Push(t.Single());
                         }
                     }
@@ -132,15 +132,16 @@ namespace SATStreams
 
         internal static Clause RangedPropagation(Clause init, Clause rv, Dictionary<int, CNF> lut)
         {
-            Clause ok = null;
+            Clause ok = null;           
+            
             foreach (var comb in GetCombinations(rv).OrderBy(x => random.Next()))
             {
                 var oc = OutCome(init, comb, lut);
                 if (oc.Any(x => oc.Contains(-x)))
-                {
+                {                    
                     continue;
-                }
-                
+                }                
+
                 ok = ok ?? oc;
                 ok.IntersectWith(oc);
 
@@ -169,7 +170,7 @@ namespace SATStreams
         public static string GetCNFHash(CNF cnf)
         {
             var sb = new StringBuilder();
-            foreach (var cl in cnf.OrderBy(x => x.Max(o=>o)))
+            foreach (var cl in cnf.OrderBy(x => x.Max(o => o)))
             {
                 foreach (var lit in cl.OrderBy(x => x))
                 {
@@ -189,12 +190,12 @@ namespace SATStreams
         {
             name = $"checkpoints/{name}";
             var init = streams.Select(x => x.Clause).Aggregate((x, y) => x.Intersect(y).ToHashSet());
-            if(!Directory.Exists(name))
+            if (!Directory.Exists(name))
             {
                 Directory.CreateDirectory(name);
             }
             foreach (var stream in streams)
-            { 
+            {
                 var cnf = stream.Clause.Select(x => new Clause { x }).ToHashSet();
                 var filePath = Path.Combine(name, $"{stream.Id}.cnf");
                 ToFile(cnf, filePath);
@@ -204,7 +205,7 @@ namespace SATStreams
             ToFile(solutionCNF, solutionFilePath);
 
             var cnfFiles = Directory.GetFiles(name, "*.cnf");
-            foreach(var file in cnfFiles)
+            foreach (var file in cnfFiles)
             {
                 var fileName = Path.GetFileName(file);
                 if (fileName == "solution.cnf" || fileName == "activeids.txt")
@@ -245,17 +246,24 @@ namespace SATStreams
             }
             foreach (var activeId in activeIds)
             {
-                var cnf = FromFile(Path.Combine(name,activeId+".cnf"));
+                var cnf = FromFile(Path.Combine(name, activeId + ".cnf"));
                 if (cnf.Count == 0)
                 {
                     continue;
                 }
                 var stream = new SATStream();
-                stream.Clause = cnf.Where(x=>x.Count == 1).SelectMany(x => x).ToHashSet();
+                stream.Clause = cnf.Where(x => x.Count == 1).SelectMany(x => x).ToHashSet();
                 stream.SetID(activeId);
                 streams.Add(stream);
             }
             return streams;
+        }
+
+        public static double Scale(double x, double a, double b, double c, double d)
+        {
+            if (x < a) return c;
+            if (x > b) return d;
+            return c + (d - c) * (x - a) / (b - a);
         }
     }
 }

@@ -17,6 +17,10 @@ namespace SATStreams
         [JsonIgnore]
         public bool HostVisualisationServer { get; set; } = true;
 
+
+        [JsonIgnore]
+        public double MergingThreshold { get; set; } = 0.02;
+
         /// <summary>
         /// Whether to use file checkpoints to save the state of the solver.
         /// </summary>
@@ -39,7 +43,7 @@ namespace SATStreams
         public string ProblemName { get; set; } = "SATSolver";
 
         [JsonIgnore]
-        public double BranchingChance { get; set; } = 0.01;
+        public double BranchingChance { get; set; } = 0.1;
 
         [JsonIgnore]
         public int CombinedVarCount { get; set; } = 6;
@@ -73,6 +77,7 @@ namespace SATStreams
         private Random random = new Random(42);
         private Stopwatch watch;
         private DateTime lastCheckpointTime = DateTime.UtcNow;
+        private Z3Solver fastSolver;
 
         public SATSolver(CNF cnf, string problemName = null)
         {
@@ -81,18 +86,18 @@ namespace SATStreams
             this.cnf = cnf;
             this.lut = Utils.CreateLUT(cnf);
             this.ProblemName = problemName ?? "SATSolver";
-            this.variables = Utils.GetVariables(cnf).OrderByDescending(x=>x).ToHashSet();
+            this.variables = Utils.GetVariables(cnf).OrderByDescending(x => x).ToHashSet();
 
             var units = cnf.Where(x => x.Count == 1).SelectMany(x => x).ToHashSet();
             init = Utils.OutCome(new Clause(), units, lut);
-        }
+        }        
 
         /// <summary>
         /// Returns solution if found, otherwise returns null if UNSAT.
         /// </summary>        
         public Clause Solve()
         {
-            if(HostVisualisationServer)
+            if (HostVisualisationServer)
             {
                 StartVisualizationServer();
             }
@@ -103,16 +108,18 @@ namespace SATStreams
             solvingStreams.Add(rootStream);
 
             var hash = Utils.GetCNFHash(cnf);
-            if(UseCheckpoints)
+            if (UseCheckpoints)
             {
                 var streams = Utils.LoadCheckPoint(hash);
-                if(streams != null && streams.Count > 0)
+                if (streams != null && streams.Count > 0)
                 {
                     solvingStreams = streams;
                     init = solvingStreams.Select(x => x.Clause).Aggregate((x, y) => x.Intersect(y).ToHashSet());
-                    LogMessage?.Invoke($"Loaded checkpoint with {solvingStreams.Count} streams.");                    
+                    LogMessage?.Invoke($"Loaded checkpoint with {solvingStreams.Count} streams.");
                 }
             }
+
+            SortVariables();
 
             for (int i = 0; i < FastSolverThreadCount; i++)
             {
@@ -129,14 +136,16 @@ namespace SATStreams
                 thread.Start();
             }
 
-            var fastSolver = new Z3Solver(cnf, 10);            
+            fastSolver = new Z3Solver(cnf, 500);
             while (init.Count < variables.Count)
             {
                 TryMerge();
+                SortVariables();
 
                 Clause lastGoodRV = null;
+                var lowestStream = solvingStreams.OrderBy(x => x.Clause.Count).FirstOrDefault(x => !x.IsMarkedForDeletion);
 
-                foreach(var stream in solvingStreams.OrderBy(_=>random.Next()).ToList())
+                foreach (var stream in solvingStreams.OrderBy(_ => random.Next()).ToList())
                 {
                     var toDelete = solvingStreams.FirstOrDefault(x => x.IsMarkedForDeletion);
                     if (toDelete != null)
@@ -146,11 +155,11 @@ namespace SATStreams
                         {
                             continue;
                         }
-                    }                   
+                    }
 
-                    if(stream.Clause.Count == variables.Count)
+                    if (stream.Clause.Count == variables.Count)
                     {
-                        if(stream.Clause.Any(x=> stream.Clause.Contains(-x)))
+                        if (stream.Clause.Any(x => stream.Clause.Contains(-x)))
                         {
                             DeleteStream(stream);
                             continue;
@@ -187,12 +196,38 @@ namespace SATStreams
                             }
 
                             LogMessage?.Invoke($"{progressString}{watch.Elapsed}: Propagated stream id:{stream.Id} to {stream.Clause.Count} vars. Total streams: {solvingStreams.Count}");
-                        } 
+                        }
+                    }
+
+                    if(!lowestStream.IsMarkedForDeletion)
+                    {
+                        var rv = variables.Skip(random.Next(variables.Count))
+                            .Where(x => !lowestStream.Clause.Contains(x) && !lowestStream.Clause.Contains(-x))
+                            .Take(CombinedVarCount)
+                            .ToHashSet();
+                        var prop = Utils.RangedPropagation(lowestStream.Clause, rv, lut);
+                        if (prop == null)
+                        {
+                            lowestStream.IsMarkedForDeletion = true;
+                            lowestStream = solvingStreams.OrderBy(x => x.Clause.Count).FirstOrDefault(x => !x.IsMarkedForDeletion);
+                        }
+                        else if(prop.Count > lowestStream.Clause.Count)
+                        {
+                            Utils.FastBCP(lowestStream.Clause, prop, lut);
+                            if (lowestStream.Clause.Any(x => lowestStream.Clause.Contains(-x)) || fastSolver.Solve(lowestStream.Clause, out _) == false)
+                            {
+                                lowestStream.IsMarkedForDeletion = true;
+                            }
+                            else
+                            {
+                                LogMessage?.Invoke($"{progressString}{watch.Elapsed}: Propagated lowest stream id:{lowestStream.Id} to {lowestStream.Clause.Count} vars.");
+                            }
+                            lowestStream = solvingStreams.OrderBy(x => x.Clause.Count).FirstOrDefault(x => !x.IsMarkedForDeletion);
+                        }
                     }
 
                     if (random.NextDouble() < BranchingChance)
-                    {
-                        var lowestStream = solvingStreams.OrderBy(x => x.Clause.Count).FirstOrDefault(x => !x.IsMarkedForDeletion);
+                    {                        
                         if (lowestStream != null)
                         {
                             var branch = new SATStream(lowestStream);
@@ -207,12 +242,13 @@ namespace SATStreams
                         }
                     }
 
+                    TryPropagateAll();
                     UpdateTemporalProperties();
                 }
 
-                
 
-                if(DateTime.UtcNow - lastCheckpointTime > TimeSpan.FromMinutes(5) && UseCheckpoints)
+
+                if (DateTime.UtcNow - lastCheckpointTime > TimeSpan.FromMinutes(30) && UseCheckpoints)
                 {
                     Utils.SaveCheckPoint(hash, solvingStreams);
                     lastCheckpointTime = DateTime.UtcNow;
@@ -231,6 +267,79 @@ namespace SATStreams
             LogMessage?.Invoke($"Solved in {watch.Elapsed}");
 
             return init;
+        }
+
+        private DateTime lastVariableSorting;
+        private void SortVariables()
+        {
+            if(DateTime.UtcNow - lastVariableSorting < TimeSpan.FromMinutes(1))
+            {
+                return;
+            }
+
+            orderedStreams = solvingStreams.OrderBy(x => x.Clause.Count).ToList();
+            LogMessage?.Invoke($"Ordering variables by propagation size...");
+            variables = variables.OrderByDescending(x => GetPropagationSize(x)).ToHashSet();
+            LogMessage?.Invoke($"Ordered variables by propagation size. Total variables: {variables.Count}");
+            lastVariableSorting = DateTime.UtcNow;
+        }
+
+        private double GetPropagationSize(int x)
+        {
+            if(init.Contains(x) || init.Contains(-x))
+            {
+                return 0;
+            }
+            
+            return Math.Min(AvgPropagationSize(new Clause { x }, lut),
+                            AvgPropagationSize(new Clause { -x }, lut));
+        }
+
+        static List<SATStream> orderedStreams;
+        private double AvgPropagationSize(Clause extra, LUT lut)
+        {
+            var toCheck = new[] { init, orderedStreams.First().Clause, orderedStreams.Last().Clause };
+
+            var avg = toCheck.Average(x=>Utils.OutCome(x, extra, lut).Count);
+
+            return avg;
+        }
+
+        private void TryPropagateAll()
+        {
+            var rvs = variables
+                .Skip(random.Next(variables.Count))
+                .Where(x => !init.Contains(x) && !init.Contains(-x))                
+                .Take(CombinedVarCount)
+                .ToHashSet();
+
+            if (rvs.Count == 0)
+            {
+                return;
+            }
+
+            var prop = Utils.RangedPropagation(init, rvs, lut);
+            if (prop == null || prop.Count <= init.Count)
+            {
+                return;
+            }
+            prop.ExceptWith(init);
+
+            Utils.FastBCP(init, prop, lut);
+            foreach(var stream in solvingStreams)
+            {
+                if (stream.IsMarkedForDeletion)
+                {
+                    continue;
+                }
+                Utils.FastBCP(stream.Clause, prop, lut);
+                if (stream.Clause.Any(x => stream.Clause.Contains(-x)))
+                {
+                    stream.IsMarkedForDeletion = true;
+                }
+            }
+
+            LogMessage?.Invoke($"{progressString}{watch.Elapsed}: Propagated {prop.Count} vars to all streams. Total streams: {solvingStreams.Count} minstream:{LowestStreamSize}");
         }
 
         private void StartVisualizationServer()
@@ -277,12 +386,18 @@ namespace SATStreams
         {
             var removed = new HashSet<SATStream>();
             var processed = new HashSet<(SATStream, SATStream)>();
-            var avgStreamSize = solvingStreams.Count > 0 ? solvingStreams.Average(x => x.Clause.Count) : 0;
+            var avgStreamSize = solvingStreams.Average(x => x.Clause.Count);
+            var minStreamSize = Utils.Scale(MergingThreshold, 0.0, 1.0, avgStreamSize, HighestStreamSize);
+
             foreach (var streamA in solvingStreams.ToList())
             {
+                if(streamA.Clause.Count <= minStreamSize || streamA.IsMarkedForDeletion || removed.Contains(streamA))
+                {
+                    continue;
+                }
                 foreach (var streamB in solvingStreams.ToList())
                 {
-                    if (streamA == streamB || streamA.IsMarkedForDeletion || streamB.IsMarkedForDeletion || removed.Contains(streamA) || removed.Contains(streamB))
+                    if (streamA == streamB || streamB.IsMarkedForDeletion || removed.Contains(streamB))
                     {
                         continue;
                     }
@@ -291,13 +406,13 @@ namespace SATStreams
                         continue;
                     }
                     processed.Add((streamA, streamB));
-                    if(streamA.Clause.Count <= avgStreamSize || streamB.Clause.Count <= avgStreamSize)
+                    if(streamB.Clause.Count <= minStreamSize)
                     {
                         continue;
                     }
 
                     var merged = streamA.Clause.Intersect(streamB.Clause).ToHashSet();
-                    if (merged.Count <= avgStreamSize)
+                    if (merged.Count <= minStreamSize)
                     {
                         continue;
                     }
@@ -310,6 +425,8 @@ namespace SATStreams
                     removed.Add(streamB);
 
                     LogMessage?.Invoke($"{progressString}{watch.Elapsed}: Merged streams {streamA.Id} and {streamB.Id} into new stream id:{mergedStream.Id} with {merged.Count} vars. Total streams: {solvingStreams.Count}");
+
+                    break;
                 }
             }
         }

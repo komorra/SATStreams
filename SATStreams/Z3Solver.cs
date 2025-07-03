@@ -35,6 +35,27 @@ namespace SATStreams
             }
         }
 
+        public void PushAssumption(Clause assumption)
+        {
+            solver.Push();
+            foreach (var lt in assumption)
+            {
+                if (lt > 0)
+                {
+                    solver.Assert(varsDict[Math.Abs(lt)]);
+                }
+                else
+                {
+                    solver.Assert(context.MkNot(varsDict[Math.Abs(lt)]));
+                }
+            }
+        }
+
+        public void PopAssumption()
+        {
+            solver.Pop();
+        }
+
         public bool? Solve(Clause assumption, out Clause solution)
         {
             solution = null;
