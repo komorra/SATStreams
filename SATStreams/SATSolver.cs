@@ -17,6 +17,8 @@ namespace SATStreams
         [JsonIgnore]
         public bool HostVisualisationServer { get; set; } = true;
 
+        [JsonIgnore]
+        public int MergeIterations { get; set; } = 4;
 
         [JsonIgnore]
         public double MergingThreshold { get; set; } = 0.02;
@@ -139,7 +141,11 @@ namespace SATStreams
             fastSolver = new Z3Solver(cnf, 500);
             while (init.Count < variables.Count)
             {
-                TryMerge();
+                for (int i = 1; i <= MergeIterations; i++)
+                {
+                    LogMessage?.Invoke($"{progressString}{watch.Elapsed}: Merging streams iteration {i}/{MergeIterations}...");
+                    TryMerge();
+                }                
                 SortVariables();
 
                 Clause lastGoodRV = null;
